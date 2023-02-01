@@ -24,6 +24,7 @@
 
 package me.blvckbytes.autowirer;
 
+import me.blvckbytes.utilitytypes.FUnsafeBiConsumer;
 import me.blvckbytes.utilitytypes.FUnsafeConsumer;
 import me.blvckbytes.utilitytypes.FUnsafeFunction;
 import me.blvckbytes.utilitytypes.Tuple;
@@ -39,10 +40,23 @@ public class AutoWirer {
 
   private final Map<Class<?>, ConstructorInfo> singletonConstructors;
   private final List<Tuple<Object, @Nullable ConstructorInfo>> singletonInstances;
+  private final List<InstantiationListener> instantiationListeners;
+  private final Set<Class<?>> encounteredClasses;
 
   public AutoWirer() {
     this.singletonConstructors = new HashMap<>();
+    this.instantiationListeners = new ArrayList<>();
     this.singletonInstances = new ArrayList<>();
+    this.encounteredClasses = new HashSet<>();
+  }
+
+  @SuppressWarnings("unchecked")
+  public <T> AutoWirer addInstantiationListener(
+    Class<T> type, FUnsafeBiConsumer<T, Object[], Exception> creationListener,
+    Class<?>... dependencies
+  ) {
+    this.instantiationListeners.add(new InstantiationListener(type, (FUnsafeBiConsumer<Object, Object[], Exception>) creationListener, dependencies));
+    return this;
   }
 
   public AutoWirer addSingleton(Class<?> type) {
@@ -73,9 +87,8 @@ public class AutoWirer {
 
   public AutoWirer wire(@Nullable Consumer<AutoWirer> success) {
     try {
-      Set<Class<?>> encounteredClasses = new HashSet<>();
       for (Class<?> singletonType : singletonConstructors.keySet())
-        instantiateClass(singletonType, null, encounteredClasses);
+        getOrInstantiateClass(singletonType, null);
 
       for (Tuple<Object, @Nullable ConstructorInfo> data : singletonInstances) {
         Object instance = data.a;
@@ -143,11 +156,9 @@ public class AutoWirer {
     Object result = null;
 
     for (Tuple<Object, @Nullable ConstructorInfo> existing : singletonInstances) {
-      Class<?> existingClass = existing.a.getClass();
-
-      if (type.isAssignableFrom(existingClass)) {
+      if (type.isInstance(existing.a)) {
         if (result != null)
-          throw new IllegalStateException("Found multiple possible instances of type " + type + " (" + existingClass + ", " + result.getClass() + ")");
+          throw new IllegalStateException("Found multiple possible instances of type " + type + " (" + existing.a.getClass() + ", " + result.getClass() + ")");
         result = existing.a;
       }
     }
@@ -155,7 +166,20 @@ public class AutoWirer {
     return result;
   }
 
-  private Object instantiateClass(Class<?> type, Class<?> parent, Set<Class<?>> encounteredClasses) throws Exception {
+  private void callInstantiationListeners(Object instance) throws Exception {
+    for (InstantiationListener listener : instantiationListeners) {
+      if (!listener.type.isInstance(instance))
+        continue;
+
+      Object[] args = new Object[listener.dependencies.length];
+      for (int i = 0; i < args.length; i++)
+        args[i] = getOrInstantiateClass(listener.dependencies[i], null);
+
+      listener.listener.accept(instance, args);
+    }
+  }
+
+  private Object getOrInstantiateClass(Class<?> type, Class<?> parent) throws Exception {
     Object existing = findInstance(type);
     if (existing != null)
       return existing;
@@ -169,9 +193,10 @@ public class AutoWirer {
 
     Object[] argumentValues = new Object[constructorInfo.parameters.length];
     for (int i = 0; i < argumentValues.length; i++)
-      argumentValues[i] = instantiateClass(constructorInfo.parameters[i], type, encounteredClasses);
+      argumentValues[i] = getOrInstantiateClass(constructorInfo.parameters[i], type);
 
     Object instance = constructorInfo.constructor.apply(argumentValues);
+    callInstantiationListeners(instance);
     singletonInstances.add(new Tuple<>(instance, constructorInfo));
     return instance;
   }
