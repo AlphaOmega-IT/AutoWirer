@@ -34,7 +34,7 @@ import java.lang.reflect.Constructor;
 import java.util.*;
 import java.util.function.Consumer;
 
-public class AutoWirer {
+public class AutoWirer implements IAutoWirer {
 
   private @Nullable Consumer<Exception> exceptionHandler;
 
@@ -48,6 +48,9 @@ public class AutoWirer {
     this.instantiationListeners = new ArrayList<>();
     this.singletonInstances = new ArrayList<>();
     this.encounteredClasses = new HashSet<>();
+
+    // Support for the AutoWirer itself as a dependency
+    this.singletonInstances.add(new Tuple<>(this, null));
   }
 
   @SuppressWarnings("unchecked")
@@ -60,12 +63,7 @@ public class AutoWirer {
   }
 
   public AutoWirer addSingleton(Class<?> type) {
-    Constructor<?>[] constructors = type.getConstructors();
-    if (constructors.length != 1)
-      throw new IllegalStateException("Auto-wired classes need to have exactly one public constructor");
-
-    Constructor<?> constructor = constructors[0];
-    singletonConstructors.put(type, new ConstructorInfo(constructor.getParameterTypes(), constructor::newInstance, null));
+    registerConstructor(type);
     return this;
   }
 
@@ -88,7 +86,7 @@ public class AutoWirer {
   public AutoWirer wire(@Nullable Consumer<AutoWirer> success) {
     try {
       for (Class<?> singletonType : singletonConstructors.keySet())
-        getOrInstantiateClass(singletonType, null);
+        getOrInstantiateClass(singletonType, null, true);
 
       for (Tuple<Object, @Nullable ConstructorInfo> data : singletonInstances) {
         Object instance = data.a;
@@ -173,16 +171,19 @@ public class AutoWirer {
 
       Object[] args = new Object[listener.dependencies.length];
       for (int i = 0; i < args.length; i++)
-        args[i] = getOrInstantiateClass(listener.dependencies[i], null);
+        args[i] = getOrInstantiateClass(listener.dependencies[i], null, true);
 
       listener.listener.accept(instance, args);
     }
   }
 
-  private Object getOrInstantiateClass(Class<?> type, Class<?> parent) throws Exception {
-    Object existing = findInstance(type);
-    if (existing != null)
-      return existing;
+  private Object getOrInstantiateClass(Class<?> type, Class<?> parent, boolean singleton) throws Exception {
+
+    if (singleton) {
+      Object existing = findInstance(type);
+      if (existing != null)
+        return existing;
+    }
 
     if (!encounteredClasses.add(type))
       throw new IllegalStateException("Circular dependency detected: " + type + " of parent " + parent);
@@ -193,11 +194,29 @@ public class AutoWirer {
 
     Object[] argumentValues = new Object[constructorInfo.parameters.length];
     for (int i = 0; i < argumentValues.length; i++)
-      argumentValues[i] = getOrInstantiateClass(constructorInfo.parameters[i], type);
+      argumentValues[i] = getOrInstantiateClass(constructorInfo.parameters[i], type, true);
 
     Object instance = constructorInfo.constructor.apply(argumentValues);
     callInstantiationListeners(instance);
-    singletonInstances.add(new Tuple<>(instance, constructorInfo));
+    
+    if (singleton)
+      singletonInstances.add(new Tuple<>(instance, constructorInfo));
     return instance;
+  }
+
+  @Override
+  @SuppressWarnings("unchecked")
+  public <T> T getOrInstantiateClass(Class<T> type, boolean singleton) throws Exception {
+    registerConstructor(type);
+    return (T) getOrInstantiateClass(type, null, singleton);
+  }
+
+  private void registerConstructor(Class<?> type) {
+    Constructor<?>[] constructors = type.getConstructors();
+    if (constructors.length != 1)
+      throw new IllegalStateException("Auto-wired classes need to have exactly one public constructor");
+
+    Constructor<?> constructor = constructors[0];
+    singletonConstructors.put(type, new ConstructorInfo(constructor.getParameterTypes(), constructor::newInstance, null));
   }
 }
