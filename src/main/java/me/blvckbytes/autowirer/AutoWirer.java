@@ -129,6 +129,7 @@ public class AutoWirer implements IAutoWirer {
     singletonConstructors.clear();
   }
 
+  @Override
   public int getInstancesCount() {
     return singletonInstances.size();
   }
@@ -198,7 +199,7 @@ public class AutoWirer implements IAutoWirer {
 
     Object instance = constructorInfo.constructor.apply(argumentValues);
     callInstantiationListeners(instance);
-    
+
     if (singleton)
       singletonInstances.add(new Tuple<>(instance, constructorInfo));
     return instance;
