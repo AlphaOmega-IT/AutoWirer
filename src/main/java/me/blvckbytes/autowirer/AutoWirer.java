@@ -24,10 +24,7 @@
 
 package me.blvckbytes.autowirer;
 
-import me.blvckbytes.utilitytypes.FUnsafeBiConsumer;
-import me.blvckbytes.utilitytypes.FUnsafeConsumer;
-import me.blvckbytes.utilitytypes.FUnsafeFunction;
-import me.blvckbytes.utilitytypes.Tuple;
+import me.blvckbytes.utilitytypes.*;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Constructor;
@@ -108,30 +105,57 @@ public class AutoWirer implements IAutoWirer {
     }
   }
 
-  public void cleanup() {
-    for (int i = singletonInstances.size() - 1; i >= 0; i--) {
-      Tuple<Object, @Nullable ConstructorInfo> data = singletonInstances.remove(i);
-      Object instance = data.a;
+  public void cleanup() throws Exception {
+    executeAndCollectExceptions(executor -> {
+      for (int i = singletonInstances.size() - 1; i >= 0; i--) {
+        Tuple<Object, @Nullable ConstructorInfo> data = singletonInstances.remove(i);
+        Object instance = data.a;
 
-      if (instance instanceof ICleanable)
-        ((ICleanable) instance).cleanup();
+        if (instance instanceof ICleanable)
+          executor.accept(() -> ((ICleanable) instance).cleanup());
 
-      ConstructorInfo constructorInfo = data.b;
-      if (constructorInfo != null && constructorInfo.externalCleanup != null) {
-        try {
-          constructorInfo.externalCleanup.accept(instance);
-        } catch (Exception e) {
-          e.printStackTrace();
-        }
+        ConstructorInfo constructorInfo = data.b;
+
+        if (constructorInfo == null || constructorInfo.externalCleanup == null)
+          continue;
+
+        executor.accept(() -> constructorInfo.externalCleanup.accept(instance));
       }
-    }
 
-    singletonConstructors.clear();
+      singletonConstructors.clear();
+    });
   }
 
   @Override
   public int getInstancesCount() {
     return singletonInstances.size();
+  }
+
+  /**
+   * Provides a consumer for unsafe runnables, which are immediately executed within
+   * a try-catch block. Thrown exceptions are collected and thrown at the end.
+   */
+  private void executeAndCollectExceptions(Consumer<Consumer<FUnsafeRunnable<Exception>>> executor) throws Exception {
+    List<Exception> thrownExceptions = new ArrayList<>();
+
+    executor.accept(task -> {
+      try {
+        task.run();
+      } catch (Exception e) {
+        thrownExceptions.add(e);
+      }
+    });
+
+    if (thrownExceptions.size() == 0)
+      return;
+
+    // Throw the first thrown exception and add the remaining as suppressed
+    Exception exception = new Exception(thrownExceptions.get(0));
+
+    for (int i = 1; i < thrownExceptions.size(); i++)
+      exception.addSuppressed(thrownExceptions.get(i));
+
+    throw exception;
   }
 
   private @Nullable ConstructorInfo findConstructorInfo(Class<?> type) {
