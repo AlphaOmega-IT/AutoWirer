@@ -175,7 +175,9 @@ public class AutoWirer implements IAutoWirer {
     return result;
   }
 
-  private @Nullable Object findInstance(Class<?> type) {
+  @Override
+  @SuppressWarnings("unchecked")
+  public <T> @Nullable T findInstance(Class<T> type) {
     Object result = null;
 
     for (Tuple<Object, @Nullable ConstructorInfo> existing : singletonInstances) {
@@ -186,7 +188,7 @@ public class AutoWirer implements IAutoWirer {
       }
     }
 
-    return result;
+    return (T) result;
   }
 
   private void callInstantiationListeners(Object instance) throws Exception {
