@@ -37,6 +37,7 @@ public class AutoWirer implements IAutoWirer {
 
   private final Map<Class<?>, ConstructorInfo> singletonConstructors;
   private final List<Tuple<Object, @Nullable ConstructorInfo>> singletonInstances;
+  private final List<Object> existingSingletonsToCallListenersOn;
   private final List<InstantiationListener> instantiationListeners;
   private final Set<Class<?>> encounteredClasses;
 
@@ -45,6 +46,7 @@ public class AutoWirer implements IAutoWirer {
     this.instantiationListeners = new ArrayList<>();
     this.singletonInstances = new ArrayList<>();
     this.encounteredClasses = new HashSet<>();
+    this.existingSingletonsToCallListenersOn = new ArrayList<>();
 
     // Support for the AutoWirer itself as a dependency
     this.singletonInstances.add(new Tuple<>(this, null));
@@ -71,7 +73,15 @@ public class AutoWirer implements IAutoWirer {
   }
 
   public AutoWirer addExistingSingleton(Object value) {
+    return addExistingSingleton(value, false);
+  }
+
+  public AutoWirer addExistingSingleton(Object value, boolean callInstantiationListeners) {
     singletonInstances.add(new Tuple<>(value, null));
+
+    if (callInstantiationListeners)
+      this.existingSingletonsToCallListenersOn.add(value);
+
     return this;
   }
 
@@ -84,6 +94,9 @@ public class AutoWirer implements IAutoWirer {
     try {
       for (Class<?> singletonType : singletonConstructors.keySet())
         getOrInstantiateClass(singletonType, null, true);
+
+      for (Object existingSingleton : existingSingletonsToCallListenersOn)
+        callInstantiationListeners(existingSingleton);
 
       for (Tuple<Object, @Nullable ConstructorInfo> data : singletonInstances) {
         Object instance = data.a;
