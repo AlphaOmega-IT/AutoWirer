@@ -24,14 +24,21 @@
 
 package me.blvckbytes.autowirer;
 
-import lombok.AllArgsConstructor;
 import me.blvckbytes.utilitytypes.FUnsafeBiConsumer;
 
-@AllArgsConstructor
 public class InstantiationListener {
 
   public final Class<?> type;
   public final FUnsafeBiConsumer<Object, Object[], Exception> listener;
   public final Class<?>[] dependencies;
 
+  public InstantiationListener(
+    Class<?> type,
+    FUnsafeBiConsumer<Object, Object[], Exception> listener,
+    Class<?>[] dependencies
+  ) {
+    this.type = type;
+    this.listener = listener;
+    this.dependencies = dependencies;
+  }
 }
