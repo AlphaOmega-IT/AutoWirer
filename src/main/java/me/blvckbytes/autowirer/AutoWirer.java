@@ -230,7 +230,7 @@ public class AutoWirer implements IAutoWirer {
 
     ConstructorInfo constructorInfo = findConstructorInfo(type);
     if (constructorInfo == null)
-      throw new IllegalStateException("Unknown dependency: " + type);
+      throw new IllegalStateException("Unknown dependency of " + type + ": " + type);
 
     Object[] argumentValues = new Object[constructorInfo.parameters.length];
     for (int i = 0; i < argumentValues.length; i++)
