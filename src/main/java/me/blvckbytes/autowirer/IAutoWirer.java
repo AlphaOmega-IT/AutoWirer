@@ -24,13 +24,15 @@
 
 package me.blvckbytes.autowirer;
 
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.Optional;
 
 public interface IAutoWirer {
 
   <T> T getOrInstantiateClass(Class<T> type, boolean singleton) throws Exception;
 
-  <T> @Nullable T findInstance(Class<T> type);
+  <T> @NotNull Optional<T> findInstance(final Class<T> type);
 
   int getInstancesCount();
 
