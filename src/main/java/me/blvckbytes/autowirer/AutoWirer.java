@@ -36,7 +36,7 @@ import java.util.logging.Logger;
 
 public class AutoWirer implements IAutoWirer {
 
-	private final Logger logger = Logger.getLogger(this.getClass().getName());
+	private final     Logger              logger = Logger.getLogger(this.getClass().getName());
   private @Nullable Consumer<Exception> exceptionHandler;
 
   private final Map<Class<?>, ConstructorInfo> singletonConstructors = new HashMap<>();
@@ -218,7 +218,7 @@ public class AutoWirer implements IAutoWirer {
 		) return;
 
     // Throw the first thrown exception and add the remaining as suppressed
-    final Exception exception = new Exception(thrownExceptions.get(0));
+    final Exception exception = new Exception(thrownExceptions.getFirst());
 
     for (
 			int i = 1; i < thrownExceptions.size(); i++
@@ -264,7 +264,7 @@ public class AutoWirer implements IAutoWirer {
 						"Found multiple possible instances of clazz " + clazz + " (" + existing.a.getClass() + ", " + result.getClass() + ")"
 					);
 					return Optional.empty();
-				};
+				}
         result = existing.a;
       }
     }
@@ -366,7 +366,7 @@ public class AutoWirer implements IAutoWirer {
 		) {
 			this.logger.log(
 				Level.SEVERE,
-				"Exception in getOrInstantiateClass " + constructorInfo + ": ", exception
+				"Exception in getOrInstantiateClass " + constructorInfo + ": " + clazz, exception
 			);
 		}
 		
