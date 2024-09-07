@@ -81,7 +81,7 @@ public class AutoWirer implements IAutoWirer {
 			final @Nullable FUnsafeConsumer<T, Exception> onCleanup,
 			final @NotNull Class<?>... dependencies
 	) {
-		this.singletonConstructors.put(
+		this.singletonConstructors.putIfAbsent(
 				clazz,
 				new ConstructorInfo(
 						dependencies,
@@ -242,9 +242,19 @@ public class AutoWirer implements IAutoWirer {
 	private Optional<ConstructorInfo> findConstructorInfo(
 		final @NotNull Class<?> clazz
 	) {
-		return singletonConstructors.values().stream()
-			.filter(info -> clazz.isAssignableFrom(info.getClass()))
-			.findFirst();
+		ConstructorInfo result = null;
+
+		for (
+			final Map.Entry<Class<?>, ConstructorInfo> entry : singletonConstructors.entrySet()
+		) {
+			if (
+				clazz.isAssignableFrom(entry.getKey())
+			) {
+				result = entry.getValue();
+			}
+		}
+
+		return Optional.ofNullable(result);
 	}
 
 
@@ -314,68 +324,72 @@ public class AutoWirer implements IAutoWirer {
             final @NotNull Class<?> clazz,
             final @Nullable Class<?> parentClazz,
             final boolean singleton
-    ) {
-        if (singleton) {
-            Optional<?> existing = this.findInstance(clazz);
-            if (existing.isPresent()) {
-                return existing.get();
-            }
-        }
+	) {
+		if (
+				singleton
+		) {
+			final Optional<?> existing = this.findInstance(clazz);
+			if (existing.isPresent())
+				return existing;
+		}
 
-        Optional<ConstructorInfo> constructorInfo = this.findConstructorInfo(clazz);
-        if (constructorInfo.isEmpty()) {
-            this.logger.severe(
-                    "Unknown dependency of " + clazz + "."
-            );
-            return null;
-        }
-
-		if (!this.encounteredClasses.add(clazz)) {
+		if (
+				!this.encounteredClasses.add(clazz)
+		) {
 			this.logger.severe(
 					"Circular dependency detected: " + clazz + " of parent class " + parentClazz
 			);
 			return null;
 		}
 
-        Object[] argumentValues = new Object[constructorInfo.get().parameters.length];
-        for (int i = 0; i < argumentValues.length; i++) {
-            argumentValues[i] = this.getOrInstantiateClass(
-                    constructorInfo.get().parameters[i],
-                    parentClazz,
-                    true
-            );
-
-            if (argumentValues[i] instanceof Optional) {
-                argumentValues[i] = ((Optional<?>) argumentValues[i]).orElse(null);
-            }
-        }
-
-        Object instance = null;
-        try {
-            instance = constructorInfo.get().constructor.apply(argumentValues);
-        } catch (Exception exception) {
-            this.logger.log(
-                    Level.SEVERE,
-                    "Exception in getOrInstantiateClass " + constructorInfo + ": " + clazz, exception
-            );
-        } finally {
-			this.encounteredClasses.remove(clazz);
+		final Optional<ConstructorInfo> constructorInfo = this.findConstructorInfo(clazz);
+		if (
+				constructorInfo.isEmpty()
+		) {
+			this.logger.severe(
+					"Unknown dependency of " + clazz + "."
+			);
+			return null;
 		}
 
-        if (instance == null) {
-            return null;
-        }
+		final Object[] argumentValues = new Object[constructorInfo.get().parameters.length];
+		for (
+				int i = 0; i < argumentValues.length; i++
+		) {
+			argumentValues[i] = this.getOrInstantiateClass(
+					constructorInfo.get().parameters[i],
+					parentClazz,
+					true
+			);
 
-        this.callInstantiationListeners(instance);
+			if (argumentValues[i] instanceof Optional<?> optionalObject)
+				argumentValues[i] = optionalObject.orElse(null);
+		}
 
-        if (singleton) {
-            this.singletonInstances.add(
-                    new Tuple<>(instance, constructorInfo.get())
-            );
-        }
+		Object instance = null;
+		try {
+			instance = constructorInfo.get().constructor.apply(argumentValues);
+		} catch (
+				final Exception exception
+		) {
+			this.logger.log(
+					Level.SEVERE,
+					"Exception in getOrInstantiateClass " + constructorInfo + ": " + clazz, exception
+			);
+		}
 
-        return instance;
-    }
+		if (instance == null)
+			return null;
+
+		this.callInstantiationListeners(instance);
+
+		if (singleton)
+			this.singletonInstances.add(
+					new Tuple<>(instance, constructorInfo.get())
+			);
+
+		return instance;
+	}
 
 	/**
 	 * Retrieves an instance of a class or instantiates it if necessary.
