@@ -141,30 +141,52 @@ public class AutoWirer implements IAutoWirer {
 	 * @param success Consumer function to be executed upon successful wiring
 	 * @return The `AutoWirer` instance
 	 */
-    public AutoWirer wire(final @Nullable Consumer<AutoWirer> success) {
-        try {
-			this.singletonConstructors.keySet().parallelStream().forEach(singletonType -> this.getOrInstantiateClass(singletonType, null, true));
-			this.existingSingletonsToCallListenersOn.parallelStream().forEach(this::callInstantiationListeners);
-
-			this.singletonInstances.parallelStream().forEach(data -> {
-				Object instance = data.a;
-				if (instance instanceof IInitializable) {
+	public AutoWirer wire(
+		final @Nullable Consumer<AutoWirer> success
+	) {
+		Class<?> checkSingleton = null;
+		Object checkExistingSingleton = null;
+		try {
+			for (
+				final Class<?> singletonType : this.singletonConstructors.keySet()
+			) {
+				checkSingleton = singletonType;
+				this.getOrInstantiateClass(singletonType, null, true);
+			}
+			
+			for (
+				final Object existingSingleton : this.existingSingletonsToCallListenersOn
+			) {
+				checkExistingSingleton = existingSingleton;
+				this.callInstantiationListeners(existingSingleton);
+			}
+			
+			for (
+				final Tuple<Object, @Nullable ConstructorInfo> data : this.singletonInstances
+			) {
+				final Object instance = data.a;
+				if (instance instanceof IInitializable)
 					((IInitializable) instance).initialize();
-				}
-			});
-
-            if (success != null) {
-                success.accept(this);
-            }
-        } catch (Exception exception) {
-            if (this.exceptionHandler != null) {
-                this.exceptionHandler.accept(exception);
-            } else {
-                this.logger.log(Level.SEVERE, "Exception occurred in checkSingleton or checkExistingSingleton: ", exception);
-            }
-        }
-        return this;
-    }
+			}
+			
+			if (
+				success != null
+			) success.accept(this);
+			return this;
+		} catch (
+			final Exception exception
+		) {
+			if (this.exceptionHandler != null) {
+				this.exceptionHandler.accept(exception);
+				return this;
+			}
+			
+			this.logger.log(
+				Level.SEVERE,
+				"Exception occurred in checkSingleton: " + checkSingleton + "or checkExistingSingleton: " + checkExistingSingleton, exception);
+			return this;
+		}
+	}
 
 	/**
 	 * Executes cleanup operations for all singleton instances, calling their 'cleanup' methods if they implement the 'ICleanable' interface.
@@ -180,13 +202,13 @@ public class AutoWirer implements IAutoWirer {
 
 				if (
 						instance instanceof ICleanable iCleanable
-				) executor.accept(() -> ((ICleanable) instance).cleanup());
+				) executor.accept(iCleanable::cleanup);
 
 				final ConstructorInfo constructorInfo = data.b;
 
 				if (
 						constructorInfo == null ||
-								constructorInfo.externalCleanup == null
+							constructorInfo.externalCleanup == null
 				) continue;
 
 				executor.accept(() -> constructorInfo.externalCleanup.accept(instance));
@@ -242,9 +264,16 @@ public class AutoWirer implements IAutoWirer {
 	private Optional<ConstructorInfo> findConstructorInfo(
 		final @NotNull Class<?> clazz
 	) {
-		return singletonConstructors.values().stream()
-			.filter(info -> clazz.isAssignableFrom(info.getClass()))
-			.findFirst();
+		for (
+			final Map.Entry<Class<?>, ConstructorInfo> entry : singletonConstructors.entrySet()
+		) {
+			if (
+				clazz.isAssignableFrom(entry.getKey())
+			) {
+				return Optional.of(entry.getValue());
+			}
+		}
+		return Optional.empty();
 	}
 
 
@@ -260,7 +289,8 @@ public class AutoWirer implements IAutoWirer {
     @Override
     public <T> @NotNull Optional<T> findInstance(Class<T> clazz) {
 		Object result = null;
-        for (Tuple<Object, ConstructorInfo> existing : this.singletonInstances) {
+		final List<Tuple<Object, ConstructorInfo>> concurrentState = this.singletonInstances;
+        for (Tuple<Object, ConstructorInfo> existing : concurrentState) {
             if (clazz.isInstance(existing.a)) {
                 if (result != null) {
                     logger.severe("Found multiple possible instances of clazz " + clazz + " (" + existing.a.getClass() + ", " + result.getClass() + ")");
