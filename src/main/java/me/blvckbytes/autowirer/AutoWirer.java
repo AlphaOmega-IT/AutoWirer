@@ -81,7 +81,7 @@ public class AutoWirer implements IAutoWirer {
 			final @Nullable FUnsafeConsumer<T, Exception> onCleanup,
 			final @NotNull Class<?>... dependencies
 	) {
-		this.singletonConstructors.put(
+		this.singletonConstructors.putIfAbsent(
 				clazz,
 				new ConstructorInfo(
 						dependencies,
@@ -264,16 +264,19 @@ public class AutoWirer implements IAutoWirer {
 	private Optional<ConstructorInfo> findConstructorInfo(
 		final @NotNull Class<?> clazz
 	) {
+		ConstructorInfo result = null;
+
 		for (
 			final Map.Entry<Class<?>, ConstructorInfo> entry : singletonConstructors.entrySet()
 		) {
 			if (
 				clazz.isAssignableFrom(entry.getKey())
 			) {
-				return Optional.of(entry.getValue());
+				result = entry.getValue();
 			}
 		}
-		return Optional.empty();
+
+		return Optional.ofNullable(result);
 	}
 
 
@@ -289,8 +292,7 @@ public class AutoWirer implements IAutoWirer {
     @Override
     public <T> @NotNull Optional<T> findInstance(Class<T> clazz) {
 		Object result = null;
-		final List<Tuple<Object, ConstructorInfo>> concurrentState = this.singletonInstances;
-        for (Tuple<Object, ConstructorInfo> existing : concurrentState) {
+        for (Tuple<Object, ConstructorInfo> existing : this.singletonInstances) {
             if (clazz.isInstance(existing.a)) {
                 if (result != null) {
                     logger.severe("Found multiple possible instances of clazz " + clazz + " (" + existing.a.getClass() + ", " + result.getClass() + ")");
